@@ -1,2 +1,2 @@
 # mathemonastics
-Statistical analysis of personal objectives for informed decision making
+Statistical analysis of of daily activities for informed decision making
