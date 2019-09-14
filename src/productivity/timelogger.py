@@ -5,12 +5,6 @@ import csv
 from pynput import keyboard
 import time
 from datetime import datetime, timedelta
-from enum import Enum
-
-
-class FigSize(Enum):
-    small = 10
-    big = 40
 
 
 DFMT = '%Y%m%d'
@@ -21,12 +15,18 @@ DATADIR = 'timedata'
 
 today_log = []
 logger_on = False
+terminated = False
 
 
 def start_log():
-    print("Starting task ...")
     global today_log
     global logger_on
+    global terminated
+    if logger_on and not terminated:
+        return
+    terminated = False
+    print()
+    print("Starting task ...")
     logger_on = True
     starttime = datetime.today().strftime(FMT)
     today_log.append([starttime, None])
@@ -34,6 +34,7 @@ def start_log():
 
 
 def stop_log():
+    print()
     print("Stopping task ...")
     global today_log
     global logger_on
@@ -44,11 +45,13 @@ def stop_log():
 
 
 def terminate():
+    global today_log
     fpath = os.path.join(DATADIR, TODAY)
     with open(fpath, 'w', encoding='utf-8') as f:
         writer = csv.writer(f)
         for row in today_log:
             writer.writerow(row)
+    today_log = []
 
 
 LOGGER_ACTION = {'1': start_log, '2': stop_log}
@@ -56,7 +59,6 @@ LOGGER_ACTION = {'1': start_log, '2': stop_log}
 
 def on_press(key):
     try:
-        print()
         action = LOGGER_ACTION.get(key.char, lambda: None)
         action()
     except AttributeError:
@@ -89,7 +91,7 @@ def split_clock(sizes, colors):
     inner_sizes, inner_colors, outer_sizes, outer_colors = [], [], [], []
     sums = 0
     for i in range(len(sizes)):
-        if sums + sizes[i] >= 720:
+        if sums + sizes[i] >= 720:  # this will always hit, so cnt will always be assigned
             last = 720 - sums
             inner_sizes.append(last)
             inner_colors.append(colors[i])
@@ -109,20 +111,19 @@ def split_clock(sizes, colors):
     return inner_sizes, inner_colors, outer_sizes, outer_colors
 
 LW = 0.2
-SZ = 0.1
-WP = {"width":SZ, "edgecolor": "w", 'linewidth': LW, 'linestyle': 'solid', 'antialiased': True}
+SZ = 0.12
+WP = {"width": SZ, "edgecolor": "w", 'linewidth': LW, 'linestyle': 'solid', 'antialiased': True}
 
 
-def draw_clock(sizes, colors, ax):
+def draw_clock(sizes, colors, pg, ax, title):
     inner_sizes, inner_colors, outer_sizes, outer_colors = split_clock(sizes, colors)
     print("Drawing the clock ...")
     print((inner_sizes, inner_colors, outer_sizes, outer_colors))
 
     ax.pie(outer_sizes, colors=outer_colors, startangle=90, counterclock=False, radius=1.0, wedgeprops=WP)
     ax.pie(inner_sizes, colors=inner_colors, startangle=90, counterclock=False, radius=0.9, wedgeprops=WP)
-
-    # # Set aspect ratio to be equal so that pie is drawn as a circle.
-    # plt.axis('equal')
+    ax.text(0, 0, str(int(pg)) + " min", ha='center')
+    ax.set_title(title)
 
 
 def visualize_lastweek(last7, fig, gs):
@@ -131,40 +132,56 @@ def visualize_lastweek(last7, fig, gs):
         with open(fpath, 'r', encoding='utf-8') as f:
             r = csv.reader(f)
             ax = fig.add_subplot(gs[(6 - len(last7) + day) // 2, (6 - len(last7) + day) % 2])
-            visualize_clock(r, ax)
+            visualize_clock(r, ax, last7[day])
 
 
-def visualize_clock(log, ax):
-    prev_end = datetime.strptime(TODAY, DFMT).strftime(FMT)
+def visualize_clock(log, ax, dt):
+    prev_end = datetime.strptime(TODAY, DFMT).strftime(FMT) \
+        if dt == 'Today' else datetime.strptime(dt, DFMT).strftime(FMT)
+    nextday = (datetime.strptime(TODAY, DFMT) + timedelta(days=1)).strftime(FMT) \
+        if dt == 'Today' else (datetime.strptime(dt, DFMT) + timedelta(days=1)).strftime(FMT)
+
     times = []
     color = []
-    for i, row in enumerate(log):
+    pg = 0
+
+    laston = False
+    data = list(log)
+    for i, row in enumerate(data):
         curr_start = row[0]
         times.append(timedelta_min(prev_end, curr_start))
         color.append(COLOR_MAP[0])
 
         curr_end = row[1]
         if not curr_end:
-            if i != len(log)-1:
+            if i != len(data)-1:
                 continue  # error, fail safe -- skips this row
             else:
-                curr_end = datetime.today().strftime(FMT)
-                times.append(timedelta_min(curr_start, curr_end))
-                color.append(COLOR_MAP[1])
+                laston = True
         else:
-            times.append(timedelta_min(curr_start, curr_end))
+            td = timedelta_min(curr_start, curr_end)
+            times.append(td)
             color.append(COLOR_MAP[1])
+            pg += td
         prev_end = curr_end
 
-    tomorrow = datetime.strptime(((datetime.today() + timedelta(days=1)).strftime(DFMT)), DFMT).strftime(FMT)
-    times.append(timedelta_min(prev_end, tomorrow))
-    color.append(COLOR_MAP[0])
+    if laston:
+        td = timedelta_min(curr_start, nextday)
+        times.append(td)
+        color.append(COLOR_MAP[1])
+        pg += td
+    else:
+        times.append(timedelta_min(prev_end, nextday))
+        color.append(COLOR_MAP[0])
 
-    draw_clock(times, color, ax)
+    draw_clock(times, color, pg, ax, dt)
 
 
 def log_todays(today_csv, fig, gs):
     global today_log
+    global terminated
+    global TODAY
+
     if today_csv:
         fpath = os.path.join(DATADIR, today_csv)
         with open(fpath, 'r', encoding='utf-8') as f:
@@ -182,23 +199,26 @@ def log_todays(today_csv, fig, gs):
 
     ax = fig.add_subplot(gs[:, 3:])
 
-    visualize_clock(today_log, ax)
-    plt.show()
+    visualize_clock(today_log, ax, 'Today')
+
     while True:
+        plt.pause(10)
         ax.clear()
         curr_day = datetime.today().strftime('%Y%m%d')
         if curr_day != TODAY:
+            terminated = True
+            TODAY = curr_day
             terminate()
             return
-        time.sleep(120)
-        visualize_clock(today_log, ax)
-        plt.show()
+        print("Rendering ...")
+        visualize_clock(today_log, ax, 'Today')
+        time.sleep(110)
 
 
 def show_screen():
     global TODAY
     while True:
-        dir_files = os.listdir(DATADIR)
+        dir_files = [f for f in os.listdir(DATADIR) if not f.startswith('.')]
         dir_files = sorted(dir_files)
 
         if len(dir_files) > 7:
