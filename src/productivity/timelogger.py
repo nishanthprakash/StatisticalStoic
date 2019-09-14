@@ -6,6 +6,7 @@ from pynput import keyboard
 import time
 from datetime import datetime, timedelta
 
+from pynput.keyboard import Key, KeyCode
 
 DFMT = '%Y%m%d'
 TODAY = datetime.today().strftime(DFMT)
@@ -34,10 +35,12 @@ def start_log():
 
 
 def stop_log():
-    print()
-    print("Stopping task ...")
     global today_log
     global logger_on
+    if not logger_on:
+        return
+    print()
+    print("Stopping task ...")
     logger_on = False
     endtime = datetime.today().strftime(FMT)
     today_log[-1][1] = endtime
@@ -54,25 +57,33 @@ def terminate():
     today_log = []
 
 
-LOGGER_ACTION = {'1': start_log, '2': stop_log}
+def exit_log():
+    print()
+    print("Exiting ...")
+    if logger_on:
+        stop_log()
+    terminate()
+    os._exit(1)  # return False to stop listener
+
+
+LOGGER_ACTION = {
+    frozenset([Key.shift, Key.cmd, KeyCode(char='1')]): start_log,
+    frozenset([Key.shift, Key.cmd, KeyCode(char='2')]): stop_log,
+    frozenset([Key.shift, Key.cmd, Key.esc]): exit_log,
+}
+
+# Currently pressed keys
+current_keys = set()
 
 
 def on_press(key):
-    try:
-        action = LOGGER_ACTION.get(key.char, lambda: None)
-        action()
-    except AttributeError:
-        pass
+    current_keys.add(key)
+    LOGGER_ACTION.get(frozenset(current_keys), lambda: None)()  # return False to stop listener
 
 
 def on_release(key):
-    if key == keyboard.Key.esc:
-        print()
-        print("Exiting ...")
-        if logger_on:
-            stop_log()
-        terminate()
-        os._exit(1)  # return False to stop listener
+    if key in current_keys:
+        current_keys.remove(key)
 
 
 def timedelta_min(date1, date2):
@@ -165,11 +176,21 @@ def visualize_clock(log, ax, dt):
             pg += td
         prev_end = curr_end
 
-    if laston:
-        td = timedelta_min(curr_start, nextday)
-        times.append(td)
-        color.append(COLOR_MAP[1])
-        pg += td
+    if laston:  # curr_start is assigned if laston is True
+        if dt == 'Today':
+            now = datetime.today().strftime(FMT)
+            td = timedelta_min(curr_start, now)
+            times.append(td)
+            color.append(COLOR_MAP[1])
+            pg += td
+
+            times.append(timedelta_min(now, nextday))
+            color.append(COLOR_MAP[0])
+        else:
+            td = timedelta_min(curr_start, nextday)
+            times.append(td)
+            color.append(COLOR_MAP[1])
+            pg += td
     else:
         times.append(timedelta_min(prev_end, nextday))
         color.append(COLOR_MAP[0])
