@@ -1,3 +1,8 @@
+.DS_Store
+.idea
+*iml
+src/productivity/timedata
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
