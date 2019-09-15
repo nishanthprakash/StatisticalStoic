@@ -78,7 +78,8 @@ current_keys = set()
 
 def on_press(key):
     current_keys.add(key)
-    LOGGER_ACTION.get(frozenset(current_keys), lambda: None)()  # return False to stop listener
+    LOGGER_ACTION.get(frozenset(current_keys), lambda: None)()
+    # return False to stop listener
 
 
 def on_release(key):
@@ -213,11 +214,6 @@ def log_todays(today_csv, fig, gs):
     if logger_on:
         start_log()
 
-    listener = keyboard.Listener(
-        on_press=on_press,
-        on_release=on_release)
-    listener.start()
-
     ax = fig.add_subplot(gs[:, 3:])
 
     visualize_clock(today_log, ax, 'Today')
@@ -238,6 +234,12 @@ def log_todays(today_csv, fig, gs):
 
 def show_screen():
     global TODAY
+
+    listener = keyboard.Listener(
+        on_press=on_press,
+        on_release=on_release)
+    listener.start()
+
     while True:
         dir_files = [f for f in os.listdir(DATADIR) if not f.startswith('.')]
         dir_files = sorted(dir_files)
